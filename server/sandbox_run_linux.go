@@ -17,9 +17,11 @@ import (
 	"github.com/containers/libpod/pkg/annotations"
 	"github.com/containers/libpod/pkg/cgroups"
 	"github.com/containers/storage"
+	"github.com/cri-o/cri-o/internal/lib/config"
 	"github.com/cri-o/cri-o/internal/lib/sandbox"
 	"github.com/cri-o/cri-o/internal/oci"
 	"github.com/cri-o/cri-o/internal/pkg/log"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runc/libcontainer/cgroups/systemd"
 	runtimespec "github.com/opencontainers/runtime-spec/specs-go"
 	spec "github.com/opencontainers/runtime-spec/specs-go"
@@ -37,12 +39,6 @@ const cgroupMemorySubsystemMountPathV1 = "/sys/fs/cgroup/memory"
 const cgroupMemorySubsystemMountPathV2 = "/sys/fs/cgroup"
 
 func (s *Server) runPodSandbox(ctx context.Context, req *pb.RunPodSandboxRequest) (resp *pb.RunPodSandboxResponse, err error) {
-	const operation = "run_pod_sandbox"
-	defer func() {
-		recordOperation(operation, time.Now())
-		recordError(operation, err)
-	}()
-
 	s.updateLock.RLock()
 	defer s.updateLock.RUnlock()
 
@@ -103,9 +99,8 @@ func (s *Server) runPodSandbox(ctx context.Context, req *pb.RunPodSandboxRequest
 		s.defaultIDMappings,
 		labelOptions)
 	mountLabel = podContainer.MountLabel
-	if !s.privilegedSandbox(req) {
-		processLabel = podContainer.ProcessLabel
-	}
+	processLabel = podContainer.ProcessLabel
+
 	if errors.Cause(err) == storage.ErrDuplicateName {
 		return nil, fmt.Errorf("pod sandbox with name %q already exists", name)
 	}
@@ -140,15 +135,12 @@ func (s *Server) runPodSandbox(ctx context.Context, req *pb.RunPodSandboxRequest
 
 	// setup defaults for the pod sandbox
 	g.SetRootReadonly(true)
-	if s.config.PauseCommand == "" {
-		if podContainer.Config != nil {
-			g.SetProcessArgs(podContainer.Config.Config.Cmd)
-		} else {
-			g.SetProcessArgs([]string{sandbox.PodInfraCommand})
-		}
-	} else {
-		g.SetProcessArgs([]string{s.config.PauseCommand})
+
+	pauseCommand, err := PauseCommand(s.Config(), podContainer.Config)
+	if err != nil {
+		return nil, err
 	}
+	g.SetProcessArgs(pauseCommand)
 
 	// set DNS options
 	if req.GetConfig().GetDnsConfig() != nil {
@@ -620,7 +612,6 @@ func (s *Server) runPodSandbox(ctx context.Context, req *pb.RunPodSandboxRequest
 				return nil, errors.Wrapf(err, "cannot chown %s to %d:%d", path, rootPair.UID, rootPair.GID)
 			}
 		}
-
 	}
 
 	if err := s.createContainerPlatform(container, nil, sb.CgroupParent()); err != nil {
@@ -747,4 +738,29 @@ func AddCgroupAnnotation(ctx context.Context, g generate.Generator, mountPath, c
 	g.AddAnnotation(annotations.CgroupParent, cgroupParent)
 
 	return cgroupParent, nil
+}
+
+// PauseCommand returns the pause command for the provided image configuration.
+func PauseCommand(cfg *config.Config, image *v1.Image) ([]string, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("provided configuration is nil")
+	}
+
+	// This has been explicitly set by the user, since the configuration
+	// default is `/pause`
+	if cfg.PauseCommand == "" {
+		if image == nil ||
+			(len(image.Config.Entrypoint) == 0 && len(image.Config.Cmd) == 0) {
+			return nil, fmt.Errorf(
+				"unable to run pause image %q: %s",
+				cfg.PauseImage,
+				"neither Cmd nor Entrypoint specified",
+			)
+		}
+		cmd := []string{}
+		cmd = append(cmd, image.Config.Entrypoint...)
+		cmd = append(cmd, image.Config.Cmd...)
+		return cmd, nil
+	}
+	return []string{cfg.PauseCommand}, nil
 }

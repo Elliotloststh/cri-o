@@ -44,11 +44,14 @@ CRI-O reads its storage defaults from the containers-storage.conf(5) file locate
 **log_dir**="/var/log/crio/pods"
   The default log directory where all logs will go unless directly specified by the kubelet. The log directory specified must be an absolute directory.
 
+**version_file**="/var/lib/crio/version"
+  Location for crio to lay down the version file.
+
 ## CRIO.API TABLE
 The `crio.api` table contains settings for the kubelet/gRPC interface.
 
 **host_ip**=""
-  Host IP considered as the primary IP to use by CRI-O for things such as host network IP.
+  Host IPs are the addresses to be used for the host network. It is not possible to assign more than two addresses right now.
 
 **listen**="/var/run/crio/crio.sock"
   Path to AF_LOCAL socket on which CRI-O will listen.
@@ -158,11 +161,17 @@ The `crio.runtime` table contains settings pertaining to the OCI runtime used an
 **pids_limit**=1024
   Maximum number of processes allowed in a container.
 
-**log_to_journald**=false
-  Whether container output should be logged to journald in addition to the kuberentes log file.
+**log_filter**=""
+  Filter the log messages by the provided regular expression. This option supports live configuration reload. For example 'request:.*' filters all gRPC requests.
+
+**log_level**="error"
+  Changes the verbosity of the logs based on the level it is set to. Options are fatal, panic, error, warn, info, and debug. This option supports live configuration reload.
 
 **log_size_max**=-1
   Maximum size allowed for the container log file. Negative numbers indicate that no size limit is imposed. If it is positive, it must be >= 8192 to match/exceed conmon's read buffer. The file is truncated and re-opened so the limit is never exceeded.
+
+**log_to_journald**=false
+  Whether container output should be logged to journald in addition to the kuberentes log file.
 
 **container_exits_dir**="/var/run/crio/exits"
   Path to directory in which container exit files are written to by conmon.
@@ -175,9 +184,6 @@ The `crio.runtime` table contains settings pertaining to the OCI runtime used an
 
 **read_only**=false
   If set to true, all containers will run in read-only mode.
-
-**log_level**="error"
-  Changes the verbosity of the logs based on the level it is set to. Options are fatal, panic, error, warn, info, and debug. This option supports live configuration reload.
 
 **uid_mappings**=""
   The UID mappings for the user namespace of each container. A range is specified in the form containerUID:HostUID:Size. Multiple ranges must be separated by comma.

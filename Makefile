@@ -11,7 +11,6 @@ export GO_BUILD=$(GO) build
 endif
 
 PROJECT := github.com/cri-o/cri-o
-CRIO_IMAGE = crio_dev$(if $(GIT_BRANCH_CLEAN),:$(GIT_BRANCH_CLEAN))
 CRIO_INSTANCE := crio_dev
 PREFIX ?= ${DESTDIR}/usr/local
 BINDIR ?= ${PREFIX}/bin
@@ -78,6 +77,11 @@ VPATH := $(VPATH):$(GOPATH)
 SHRINKFLAGS := -s -w
 BASE_LDFLAGS = ${SHRINKFLAGS} -X main.gitCommit=${GIT_COMMIT} -X main.buildInfo=${SOURCE_DATE_EPOCH}
 LDFLAGS = -ldflags '${BASE_LDFLAGS}'
+
+TESTIMAGE_VERSION := 1.0.0
+TESTIMAGE_REGISTRY := quay.io/crio
+TESTIMAGE_SCRIPT := scripts/build-test-image -r $(TESTIMAGE_REGISTRY) -v $(TESTIMAGE_VERSION)
+TESTIMAGE_NAME ?= $(shell $(TESTIMAGE_SCRIPT) -d)
 
 all: binaries crio.conf docs
 
@@ -175,15 +179,20 @@ bin/crio.cross.%: git-vars .gopathok .explicit_phony
 	GOARCH="$${TARGET##*.}" \
 	$(GO_BUILD) $(LDFLAGS) -tags "containers_image_openpgp btrfs_noversion" -o "$@" $(PROJECT)/cmd/crio
 
-crioimage: git-vars
-	$(CONTAINER_RUNTIME) build -t ${CRIO_IMAGE} .
+local-image:
+	$(TESTIMAGE_SCRIPT)
 
-dbuild: crioimage
+test-images:
+	$(TESTIMAGE_SCRIPT) -g 1.12 -a amd64
+	$(TESTIMAGE_SCRIPT) -g 1.12 -a 386
+	$(TESTIMAGE_SCRIPT) -g 1.10 -a amd64
+
+dbuild:
 	$(CONTAINER_RUNTIME) run --rm --name=${CRIO_INSTANCE} --privileged \
 		-v $(shell pwd):/go/src/${PROJECT} -w /go/src/${PROJECT} \
-		${CRIO_IMAGE} make
+		$(TESTIMAGE_NAME) make
 
-integration: ${GINKGO} crioimage
+integration: ${GINKGO}
 	$(CONTAINER_RUNTIME) run \
 		-e CI=true \
 		-e CRIO_BINARY \
@@ -197,7 +206,7 @@ integration: ${GINKGO} crioimage
 		-v ${GINKGO}:/usr/bin/ginkgo \
 		-w /go/src/${PROJECT} \
 		--sysctl net.ipv6.conf.all.disable_ipv6=0 \
-		${CRIO_IMAGE} \
+		$(TESTIMAGE_NAME) \
 		make localintegration
 
 define go-build
@@ -221,7 +230,11 @@ ${RELEASE_TOOL}:
 	$(call go-build,./vendor/github.com/containerd/project/cmd/release-tool)
 
 ${GOLANGCI_LINT}:
-	$(call go-build,./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint)
+	export \
+		VERSION=v1.21.0 \
+		URL=https://raw.githubusercontent.com/golangci/golangci-lint \
+		BINDIR=${BUILD_BIN_PATH} && \
+	curl -sfL $$URL/$$VERSION/install.sh | sh -s $$VERSION
 
 vendor:
 	export GO111MODULE=on \
@@ -242,8 +255,6 @@ testunit: ${GINKGO}
 		--coverprofile coverprofile \
 		--tags "test $(BUILDTAGS)" \
 		--succinct
-	# fixes https://github.com/onsi/ginkgo/issues/518
-	sed -i '2,$${/^mode: atomic/d;}' ${COVERAGE_PATH}/coverprofile
 	$(GO) tool cover -html=${COVERAGE_PATH}/coverprofile -o ${COVERAGE_PATH}/coverage.html
 	$(GO) tool cover -func=${COVERAGE_PATH}/coverprofile | sed -n 's/\(total:\).*\([0-9][0-9].[0-9]\)/\1 \2/p'
 	find . -name '*_junit.xml' -exec mv -t ${JUNIT_PATH} {} +
@@ -304,8 +315,8 @@ mock-image-types: ${MOCKGEN}
 	${BUILD_BIN_PATH}/mockgen \
 		${MOCKGEN_FLAGS} \
 		-package imagetypesmock \
-		-destination ${MOCK_PATH}/containers/image/types.go \
-		github.com/containers/image/types ImageCloser
+		-destination ${MOCK_PATH}/containers/image/v5/types.go \
+		github.com/containers/image/v5/types ImageCloser
 
 mock-ocicni-types: ${MOCKGEN}
 	${BUILD_BIN_PATH}/mockgen \
@@ -335,7 +346,7 @@ docs/%.8: docs/%.8.md .gopathok ${GO_MD2MAN}
 	(${GO_MD2MAN} -in $< -out $@.tmp && touch $@.tmp && mv $@.tmp $@) || \
 		(${GO_MD2MAN} -in $< -out $@.tmp && touch $@.tmp && mv $@.tmp $@)
 
-completions: binaries
+completions:
 	bin/crio complete bash > completions/bash/crio
 	bin/crio complete fish > completions/fish/crio.fish
 	bin/crio complete zsh  > completions/zsh/_crio
@@ -343,7 +354,7 @@ completions: binaries
 	bin/crio-status complete fish > completions/fish/crio-status.fish
 	bin/crio-status complete zsh  > completions/zsh/_crio-status
 
-docs: $(MANPAGES) completions
+docs: $(MANPAGES)
 
 docs-generation:
 	bin/crio-status md  > docs/crio-status.8.md
@@ -358,8 +369,6 @@ install.bin: binaries
 	install ${SELINUXOPT} -D -m 755 bin/crio $(BINDIR)/crio
 	install ${SELINUXOPT} -D -m 755 bin/crio-status $(BINDIR)/crio-status
 	install ${SELINUXOPT} -D -m 755 bin/pause $(LIBEXECDIR)/crio/pause
-	install ${SELINUXOPT} -d -m 755 $(LIBEXECDIR)/crio/crio-wipe
-	install ${SELINUXOPT} -D -m 755 contrib/crio-wipe/*.bash $(LIBEXECDIR)/crio/crio-wipe/
 
 install.man: $(MANPAGES)
 	install ${SELINUXOPT} -d -m 755 $(MANDIR)/man5
@@ -435,5 +444,8 @@ docs-validation:
 	local-cross \
 	nix-image \
 	release-bundle \
+	testunit \
+	testunit-bin \
+	test-images \
 	uninstall \
 	vendor

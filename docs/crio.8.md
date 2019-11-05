@@ -34,11 +34,12 @@ crio
 [--image-volumes=[value]]
 [--listen=[value]]
 [--log=[value]]
-[--log-format value]
-[--log-level, -l value]
 [--log-dir value]
-[--log-size-max value]
+[--log-filter value]
+[--log-format value]
 [--log-journald]
+[--log-level, -l value]
+[--log-size-max value]
 [--metrics-port value]
 [--pause-command=[value]]
 [--pause-image=[value]]
@@ -61,6 +62,7 @@ crio
 [--stream-port=[value]]
 [--uid-mappings=[value]]
 [--version|-v]
+[--version-file=[value]]
 [--conmon-env=[value]]
 [--container-attach-socket-dir=[value]]
 [--container-exits-dir=[value]]
@@ -161,15 +163,17 @@ For the bind-mount conditions, only mounts explicitly requested by Kubernetes co
 
 **--log**="": Set the log file path where internal debug information is written
 
+**--log-dir**="": default log directory where all logs will go unless directly specified by the kubelet
+
+**--log-filter**="": filter the log messages by the provided regular expression. For example 'request:.\*' filters all gRPC requests.
+
 **--log-format**="": Set the format used by logs ('text' (default), or 'json') (default: "text")
+
+**--log-journald**: log to systemd journal in addition to the kubernetes log specified with **--log**
 
 **--log-level, -l**="": log crio messages above specified level: debug, info, warn, error (default), fatal or panic
 
-**--log-dir**="": default log directory where all logs will go unless directly specified by the kubelet
-
 **--log-size-max**="": Maximum log size in bytes for a container (default: -1 (no limit)). If it is positive, it must be >= 8192 (to match/exceed conmon read buffer).
-
-**--log-journald**: log to systemd journal in addition to the kubernetes log specified with **--log**
 
 **--metrics-port**="": Port for the metrics endpoint (default: 9090)
 
@@ -215,6 +219,8 @@ For the bind-mount conditions, only mounts explicitly requested by Kubernetes co
 
 **--version, -v**: Print the version
 
+**--version-file**="": Location for crio to lay down the version file
+
 **--conmon-env**="": environment variable list for the conmon process, used for passing necessary environment variables to conmon or the runtime (default: "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 
 **--container-attach-socket-dir**="": path to directory for container attach sockets (default: "/var/run/crio")
@@ -227,7 +233,7 @@ For the bind-mount conditions, only mounts explicitly requested by Kubernetes co
 
 **--grpc-max-send-msg-size**="": maximum grpc receive message size (default: 16 * 1024 * 1024)
 
-**--host-ip**="": host IP considered as the primary IP to use by CRI-O for things such as host network IP (default: "")
+**--host-ip**="": Host IPs are the addresses to be used for the host network and can be specified up to two times (default: [])
 
 **--manage-network-ns-lifecycle**: determines whether we pin and remove network namespace and manage its lifecycle (default: false)
 

@@ -8,16 +8,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/containers/storage/pkg/idtools"
+	"github.com/containers/storage/pkg/stringid"
 	"github.com/cri-o/cri-o/internal/lib/config"
 	"github.com/cri-o/cri-o/internal/lib/sandbox"
 	"github.com/cri-o/cri-o/internal/pkg/log"
 	"github.com/cri-o/cri-o/internal/pkg/storage"
 	"github.com/cri-o/cri-o/utils"
 	dockermounts "github.com/docker/docker/pkg/mount"
-	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/pkg/symlink"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	rspec "github.com/opencontainers/runtime-spec/specs-go"
@@ -521,11 +520,6 @@ func addSecretsBindMounts(ctx context.Context, mountLabel, ctrRunDir string, def
 
 // CreateContainer creates a new container in specified PodSandbox
 func (s *Server) CreateContainer(ctx context.Context, req *pb.CreateContainerRequest) (res *pb.CreateContainerResponse, err error) {
-	const operation = "create_container"
-	defer func() {
-		recordOperation(operation, time.Now())
-		recordError(operation, err)
-	}()
 	log.Infof(ctx, "Attempting to create container: %s", translateLabelsToDescription(req.GetConfig().GetLabels()))
 
 	s.updateLock.RLock()
@@ -624,7 +618,6 @@ func (s *Server) CreateContainer(ctx context.Context, req *pb.CreateContainerReq
 		ContainerId: containerID,
 	}
 
-	log.Debugf(ctx, "CreateContainerResponse: %+v", resp)
 	return resp, nil
 }
 

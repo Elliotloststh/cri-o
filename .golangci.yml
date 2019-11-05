@@ -6,7 +6,8 @@ run:
     - seccomp
     - selinux
     - test
-    # containers/storage currently has btrfs included, but the images don't, so the linter fails.
+    # containers/storage currently has btrfs included, but the images don't, so
+    # the linter fails.
     - exclude_graphdriver_btrfs
   concurrency: 6
   deadline: 5m
@@ -16,6 +17,7 @@ linters:
     - bodyclose
     - deadcode
     - depguard
+    - dogsled
     - dupl
     - errcheck
     - gochecknoinits
@@ -43,8 +45,13 @@ linters:
     - unparam
     - unused
     - varcheck
+    - whitespace
+    # - funlen
     # - gochecknoglobals
+    # - gocognit
+    # - godox
     # - lll
+    # - wsl
 linters-settings:
   errcheck:
     check-type-assertions: true

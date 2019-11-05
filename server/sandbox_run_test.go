@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/containers/libpod/pkg/annotations"
+	"github.com/cri-o/cri-o/internal/lib/config"
 	"github.com/cri-o/cri-o/internal/oci"
 	"github.com/cri-o/cri-o/internal/pkg/storage"
 	"github.com/cri-o/cri-o/server"
@@ -225,32 +226,19 @@ var _ = t.Describe("RunPodSandbox", func() {
 			Expect(res).To(Equal(""))
 		})
 
-		var prepareCgroupDirs = func(perm os.FileMode, content string) (string, string) {
+		var prepareCgroupDirs = func(content string) (string, string) {
 			const cgroup = "some.slice"
 			tmpDir := t.MustTempDir("cgroup")
 			Expect(os.MkdirAll(filepath.Join(tmpDir, cgroup), 0755)).To(BeNil())
 			Expect(ioutil.WriteFile(
 				filepath.Join(tmpDir, cgroup, "memory.limit_in_bytes"),
-				[]byte(content), perm)).To(BeNil())
+				[]byte(content), 0644)).To(BeNil())
 			return cgroup, tmpDir
 		}
 
-		It("should fail with systemd manager if memory read fails", func() {
-			// Given
-			cgroup, tmpDir := prepareCgroupDirs(0222, "")
-
-			// When
-			res, err := server.AddCgroupAnnotation(context.Background(), g,
-				tmpDir, oci.SystemdCgroupsManager, cgroup, "id")
-
-			// Then
-			Expect(err).NotTo(BeNil())
-			Expect(res).To(Equal(""))
-		})
-
 		It("should succeed with systemd manager if memory string empty", func() {
 			// Given
-			cgroup, tmpDir := prepareCgroupDirs(0644, "")
+			cgroup, tmpDir := prepareCgroupDirs("")
 
 			// When
 			res, err := server.AddCgroupAnnotation(context.Background(), g,
@@ -263,7 +251,7 @@ var _ = t.Describe("RunPodSandbox", func() {
 
 		It("should succeed with systemd manager with valid memory ", func() {
 			// Given
-			cgroup, tmpDir := prepareCgroupDirs(0644, "13000000")
+			cgroup, tmpDir := prepareCgroupDirs("13000000")
 
 			// When
 			res, err := server.AddCgroupAnnotation(context.Background(), g,
@@ -276,7 +264,7 @@ var _ = t.Describe("RunPodSandbox", func() {
 
 		It("should fail with systemd manager with too low memory", func() {
 			// Given
-			cgroup, tmpDir := prepareCgroupDirs(0644, "10")
+			cgroup, tmpDir := prepareCgroupDirs("10")
 
 			// When
 			res, err := server.AddCgroupAnnotation(context.Background(), g,
@@ -289,7 +277,7 @@ var _ = t.Describe("RunPodSandbox", func() {
 
 		It("should fail with systemd manager with invalid memory ", func() {
 			// Given
-			cgroup, tmpDir := prepareCgroupDirs(0644, "invalid")
+			cgroup, tmpDir := prepareCgroupDirs("invalid")
 
 			// When
 			res, err := server.AddCgroupAnnotation(context.Background(), g,
@@ -298,6 +286,95 @@ var _ = t.Describe("RunPodSandbox", func() {
 			// Then
 			Expect(err).NotTo(BeNil())
 			Expect(res).To(Equal(""))
+		})
+	})
+
+	t.Describe("PauseCommand", func() {
+		var cfg *config.Config
+
+		BeforeEach(func() {
+			// Given
+			var err error
+			cfg, err = config.DefaultConfig()
+			Expect(err).To(BeNil())
+		})
+
+		It("should succeed with default config", func() {
+			// When
+			res, err := server.PauseCommand(cfg, nil)
+
+			// Then
+			Expect(err).To(BeNil())
+			Expect(res).To(Equal([]string{sut.Config().PauseCommand}))
+		})
+
+		It("should succeed with Entrypoint", func() {
+			// Given
+			cfg.PauseCommand = ""
+			entrypoint := []string{"/custom-pause"}
+			image := &v1.Image{Config: v1.ImageConfig{Entrypoint: entrypoint}}
+
+			// When
+			res, err := server.PauseCommand(cfg, image)
+
+			// Then
+			Expect(err).To(BeNil())
+			Expect(res).To(Equal(entrypoint))
+		})
+
+		It("should succeed with Cmd", func() {
+			// Given
+			cfg.PauseCommand = ""
+			cmd := []string{"some-cmd"}
+			image := &v1.Image{Config: v1.ImageConfig{Cmd: cmd}}
+
+			// When
+			res, err := server.PauseCommand(cfg, image)
+
+			// Then
+			Expect(err).To(BeNil())
+			Expect(res).To(Equal(cmd))
+		})
+
+		It("should succeed with Entrypoint and Cmd", func() {
+			// Given
+			cfg.PauseCommand = ""
+			entrypoint := "/custom-pause"
+			cmd := "some-cmd"
+			image := &v1.Image{Config: v1.ImageConfig{
+				Entrypoint: []string{entrypoint},
+				Cmd:        []string{cmd},
+			}}
+
+			// When
+			res, err := server.PauseCommand(cfg, image)
+
+			// Then
+			Expect(err).To(BeNil())
+			Expect(res).To(HaveLen(2))
+			Expect(res[0]).To(Equal(entrypoint))
+			Expect(res[1]).To(Equal(cmd))
+		})
+
+		It("should fail if config is nil", func() {
+			// When
+			res, err := server.PauseCommand(nil, nil)
+
+			// Then
+			Expect(err).NotTo(BeNil())
+			Expect(res).To(BeNil())
+		})
+
+		It("should fail if image config is nil", func() {
+			// Given
+			cfg.PauseCommand = ""
+
+			// When
+			res, err := server.PauseCommand(cfg, nil)
+
+			// Then
+			Expect(err).NotTo(BeNil())
+			Expect(res).To(BeNil())
 		})
 	})
 })

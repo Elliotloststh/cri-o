@@ -52,14 +52,19 @@ const templateString = `# The CRI-O configuration file specifies all of the avai
 # the kubelet. The log directory specified must be an absolute directory.
 log_dir = "{{ .LogDir }}"
 
+# Location for CRI-O to lay down the version file
+version_file = "{{ .VersionFile }}"
+
 # The crio.api table contains settings for the kubelet/gRPC interface.
 [crio.api]
 
 # Path to AF_LOCAL socket on which CRI-O will listen.
 listen = "{{ .Listen }}"
 
-# Host IP considered as the primary IP to use by CRI-O for things such as host network IP.
-host_ip = "{{ .HostIP }}"
+# Host IPs are the addresses to be used for the host network.
+# It is not possible to assign more than two addresses right now.
+host_ip = [{{ range $opt := .HostIP }}{{ printf "\n%t%q," $opt }}{{ end }}
+]
 
 # IP address on which the stream server will listen.
 stream_address = "{{ .StreamAddress }}"
@@ -206,6 +211,10 @@ read_only = {{ .ReadOnly }}
 # configuration reload.
 log_level = "{{ .LogLevel }}"
 
+# Filter the log messages by the provided regular expression.
+# This option supports live configuration reload.
+log_filter = "{{ .LogFilter }}"
+
 # The UID mappings for the user namespace of each container. A range is
 # specified in the form containerUID:HostUID:Size. Multiple ranges must be
 # separated by comma.
@@ -291,7 +300,9 @@ pause_image = "{{ .PauseImage }}"
 pause_image_auth_file = "{{ .PauseImageAuthFile }}"
 
 # The command to run to have a container stay in the paused state.
-# This option supports live configuration reload.
+# When explicitly set to "", it will fallback to the entrypoint and command
+# specified in the pause image. When commented out, it will fallback to the
+# default: "/pause". This option supports live configuration reload.
 pause_command = "{{ .PauseCommand }}"
 
 # Path to the file which decides what sort of policy we use when deciding

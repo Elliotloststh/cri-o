@@ -4,8 +4,9 @@ version: 2.1
 stdenv: &stdenv
   environment:
     GOCACHE: &gocache /tmp/go-build
-    IMAGE: &image quay.io/crio/circle-1.12:1.2.0
-    IMAGELEGACY: &imagelegacy quay.io/crio/circle-1.10:1.2.0
+    IMAGE: &image quay.io/crio/crio-build-amd64-go1.12:1.0.0
+    IMAGELEGACY: &imagelegacy quay.io/crio/crio-build-amd64-go1.10:1.0.0
+    IMAGE386: &image386 quay.io/crio/crio-build-386-go1.12:1.0.0
     JOBS: &jobs 8
     WORKDIR: &workdir /go/src/github.com/cri-o/cri-o
 
@@ -13,14 +14,18 @@ executors:
   container:
     docker:
       - image: *image
-        user: circleci
     <<: *stdenv
     working_directory: *workdir
 
   container-legacy:
     docker:
       - image: *imagelegacy
-        user: circleci
+    <<: *stdenv
+    working_directory: *workdir
+
+  container-386:
+    docker:
+      - image: *image386
     <<: *stdenv
     working_directory: *workdir
 
@@ -45,14 +50,20 @@ workflows:
     jobs:
       - build
       - build:
-          name: build-legacy
+          name: build-go1.10
           executor: container-legacy
+      - build:
+          name: build-386
+          executor: container-386
       - build-static
       - build-test-binaries
       - bundle:
           requires:
             - build
             - build-static
+      - completions-validation:
+          requires:
+            - build
       - docs-generation:
           requires:
             - build
@@ -119,9 +130,13 @@ jobs:
           keys:
             - v1-build-<< parameters.executor >>-{{ checksum "go.sum" }}
       - run: go version
+      - run: go env
       - run:
-          name: build
-          command: make -j $JOBS
+          command: make binaries -j $JOBS
+      - run:
+          command: make crio.conf
+      - run:
+          command: make docs -j $JOBS
       - save_cache:
           key: v1-build-<< parameters.executor >>-{{ checksum "go.sum" }}
           paths:
@@ -185,6 +200,25 @@ jobs:
           paths:
             - bundle/*.tar.gz
 
+  completions-validation:
+    executor: container
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - restore_cache:
+          keys:
+            - v1-completions-validation-{{ checksum "go.sum" }}
+      - run:
+          name: doc validation
+          command: |
+            sudo make completions
+            hack/tree_status.sh
+      - save_cache:
+          key: v1-completions-validation-{{ checksum "go.sum" }}
+          paths:
+            - *gocache
+
   docs-generation:
     executor: container
     steps:
@@ -197,7 +231,7 @@ jobs:
       - run:
           name: doc generation
           command: |
-            sudo make docs-generation
+            make docs-generation
             hack/tree_status.sh
       - save_cache:
           key: v1-docs-generation-{{ checksum "go.sum" }}
@@ -300,25 +334,19 @@ jobs:
             TEST_USERNS: "<< parameters.test_userns >>"
 
   lint:
-    executor: machine
+    executor: container
     steps:
       - checkout
       - restore_cache:
           keys:
-            - v1-golangci-lint-{{ checksum "go.sum" }}
+            - v2-lint-{{ checksum "go.sum" }}
       - run:
           name: lint
-          command: |
-            docker pull $IMAGE
-            docker run --privileged --rm -e GOCACHE \
-              -v $GOCACHE:$GOCACHE -v $(pwd):$WORKDIR \
-              -w $WORKDIR $IMAGE make lint
-            sudo chown -R $(id -u):$(id -g) $GOCACHE
+          command: make lint
       - save_cache:
-          key: v1-golangci-lint-{{ checksum "go.sum" }}
+          key: v2-lint-{{ checksum "go.sum" }}
           paths:
             - *gocache
-            - build/bin/golangci-lint
 
   results:
     executor: container-base

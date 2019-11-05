@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,8 +12,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 	conmonconfig "github.com/containers/conmon/runner/config"
-	"github.com/containers/image/pkg/sysregistriesv2"
-	"github.com/containers/image/types"
+	"github.com/containers/image/v5/pkg/sysregistriesv2"
+	"github.com/containers/image/v5/types"
 	"github.com/containers/libpod/pkg/rootless"
 	createconfig "github.com/containers/libpod/pkg/spec"
 	"github.com/containers/storage"
@@ -137,6 +138,9 @@ type RootConfig struct {
 	// LogDir is the default log directory where all logs will go unless kubelet
 	// tells us to put them somewhere else.
 	LogDir string `toml:"log_dir"`
+
+	// VersionFile is the location CRI-O will lay down the version file
+	VersionFile string `toml:"version_file"`
 }
 
 // RuntimeHandler represents each item of the "crio.runtime.runtimes" TOML
@@ -226,6 +230,9 @@ type RuntimeConfig struct {
 	// LogLevel determines the verbosity of the logs based on the level it is set to.
 	// Options are fatal, panic, error (default), warn, info, and debug.
 	LogLevel string `toml:"log_level"`
+
+	// LogFilter specifies a regular expression to filter the log messages
+	LogFilter string `toml:"log_filter"`
 
 	// Runtimes defines a list of OCI compatible runtimes. The runtime to
 	// use is picked based on the runtime_handler provided by the CRI. If
@@ -347,7 +354,7 @@ type APIConfig struct {
 	StreamTLSCA string `toml:"stream_tls_ca"`
 
 	// HostIP is the IP address that the server uses where it needs to use the primary host IP.
-	HostIP string `toml:"host_ip"`
+	HostIP []string `toml:"host_ip"`
 }
 
 // MetricsConfig specifies all necessary configuration for Prometheus based
@@ -454,6 +461,7 @@ func DefaultConfig() (*Config, error) {
 			Storage:        storeOpts.GraphDriverName,
 			StorageOptions: storeOpts.GraphDriverOptions,
 			LogDir:         "/var/log/crio/pods",
+			VersionFile:    CrioVersionPath,
 		},
 		APIConfig: APIConfig{
 			Listen:             CrioSocketPath,
@@ -571,6 +579,16 @@ func (c *APIConfig) Validate(onExecution bool) error {
 		if _, err := os.Stat(c.Listen); err == nil {
 			if err := os.Remove(c.Listen); err != nil {
 				return err
+			}
+		}
+
+		// Validate user provided host IPs
+		if len(c.HostIP) > 2 {
+			return errors.New("It's not possible to assign more than two host IPs")
+		}
+		for _, ip := range c.HostIP {
+			if net.ParseIP(ip) == nil {
+				return errors.Errorf("Unable to parse host IP: %v", ip)
 			}
 		}
 	}
@@ -791,7 +809,6 @@ func (r *RuntimeHandler) ValidateRuntimePath(name string) error {
 		}
 		r.RuntimePath = executable
 		logrus.Debugf("using runtime executable from $PATH %q", executable)
-
 	} else if _, err := os.Stat(r.RuntimePath); os.IsNotExist(err) {
 		return fmt.Errorf("invalid runtime_path for runtime '%s': %q",
 			name, err)

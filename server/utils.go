@@ -7,11 +7,9 @@ import (
 	"net"
 	"os"
 	"strings"
-	"time"
 
 	libconfig "github.com/cri-o/cri-o/internal/lib/config"
 	"github.com/cri-o/cri-o/internal/lib/sandbox"
-	"github.com/cri-o/cri-o/server/metrics"
 	"github.com/cri-o/ocicni/pkg/ocicni"
 	units "github.com/docker/go-units"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -112,7 +110,6 @@ func (s *Server) newPodNetwork(sb *sandbox.Sandbox) (ocicni.PodNetwork, error) {
 		} else if iegress, isok := egressQ.AsInt64(); isok {
 			egress = iegress
 		}
-
 	}
 	if val, ok := sb.Annotations()["kubernetes.io/ingress-bandwidth"]; ok {
 		ingressQ, err := resource.ParseQuantity(val)
@@ -171,19 +168,6 @@ func getOCICapabilitiesList() []string {
 		caps = append(caps, "CAP_"+strings.ToUpper(cap.String()))
 	}
 	return caps
-}
-
-func recordOperation(operation string, start time.Time) {
-	metrics.CRIOOperations.WithLabelValues(operation).Inc()
-	metrics.CRIOOperationsLatency.WithLabelValues(operation).Observe(metrics.SinceInMicroseconds(start))
-}
-
-// recordError records error for metric if an error occurred.
-func recordError(operation string, err error) {
-	if err != nil {
-		// TODO(runcom): handle timeout from ctx as well
-		metrics.CRIOOperationsErrors.WithLabelValues(operation).Inc()
-	}
 }
 
 func validateLabels(labels map[string]string) error {
@@ -325,9 +309,6 @@ func translateLabelsToDescription(labels map[string]string) string {
 // Validate given hostIP IP belongs to the current host
 // adapted from github.com/kubernetes/kubernetes/pkg/kubelet/kubelet_node_status.go
 func validateHostIP(hostIP net.IP) error {
-	if hostIP.To4() == nil {
-		return fmt.Errorf("hostIP must be a valid IP address")
-	}
 	if hostIP.IsLoopback() {
 		return fmt.Errorf("hostIP can't be loopback address")
 	}

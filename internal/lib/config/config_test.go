@@ -166,6 +166,30 @@ var _ = t.Describe("Config", func() {
 			// Then
 			Expect(err).NotTo(BeNil())
 		})
+
+		It("should fail with invalid host IP", func() {
+			// Given
+			sut = runtimeValidConfig()
+			sut.HostIP = []string{"1.2.3.4", "invalid"}
+
+			// When
+			err := sut.APIConfig.Validate(true)
+
+			// Then
+			Expect(err).NotTo(BeNil())
+		})
+
+		It("should fail with more than two host IPs", func() {
+			// Given
+			sut = runtimeValidConfig()
+			sut.HostIP = []string{"1.2.3.4", "10.1.2.3", "3300::1"}
+
+			// When
+			err := sut.APIConfig.Validate(true)
+
+			// Then
+			Expect(err).NotTo(BeNil())
+		})
 	})
 
 	t.Describe("ValidateRuntimeConfig", func() {
@@ -702,7 +726,7 @@ var _ = t.Describe("Config", func() {
 		It("should fail with invalid path", func() {
 			// Given
 			// When
-			err := sut.ToFile("/proc/invalid")
+			err := sut.ToFile(invalidPath)
 
 			// Then
 			Expect(err).NotTo(BeNil())
