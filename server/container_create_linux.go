@@ -575,9 +575,13 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 	podInfraState := sb.InfraContainer().State()
 
 	logrus.Debugf("pod container state %+v", podInfraState)
-
-	ipcNsPath := fmt.Sprintf("/proc/%d/ns/ipc", podInfraState.Pid)
+	
+	// Remove IPC namespace
+	/*ipcNsPath := fmt.Sprintf("/proc/%d/ns/ipc", podInfraState.Pid)
 	if err := specgen.AddOrReplaceLinuxNamespace(string(rspec.IPCNamespace), ipcNsPath); err != nil {
+		return nil, err
+	}*/
+	if err := specgen.RemoveLinuxNamespace(string(rspec.IPCNamespace)); err != nil {
 		return nil, err
 	}
 
@@ -597,6 +601,11 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 		if err := specgen.AddOrReplaceLinuxNamespace(string(rspec.PIDNamespace), pidNsPath); err != nil {
 			return nil, err
 		}
+	}
+
+	// Remove PID namespace
+	if err := specgen.RemoveLinuxNamespace(string(rspec.PIDNamespace)); err != nil {
+		return nil, err
 	}
 
 	// If the sandbox is configured to run in the host network, do not create a new network namespace
@@ -878,6 +887,11 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 		for _, gidmap := range s.defaultIDMappings.GIDs() {
 			specgen.AddLinuxGIDMapping(uint32(gidmap.HostID), uint32(gidmap.ContainerID), uint32(gidmap.Size))
 		}
+	}
+
+	// Remove USER namespace
+	if err := specgen.RemoveLinuxNamespace(string(rspec.UserNamespace)); err != nil {
+		return nil, err
 	}
 
 	if os.Getenv("_CRIO_ROOTLESS") != "" {
