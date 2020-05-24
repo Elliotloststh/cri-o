@@ -5,12 +5,9 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/cri-o/cri-o/lxcfs"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -383,57 +380,43 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 	specgen.SetProcessSelinuxLabel(processLabel)
 
 	//config lxcfs
-	enableLxcfs := string("false")
-	lxcfsPath := string("/var/lib/lxcfs")
-
-	for k, v := range sb.Annotations() {
-		if k == "enableLxcfs" {
-			enableLxcfs = v
-			continue
-		} else if k == "lxcfsPath" {
-			lxcfsPath = v
-			continue
-		}
-	}
-
-	specgen.AddAnnotation("enableLxcfs", enableLxcfs)
-	specgen.AddAnnotation("lxcfsPath", lxcfsPath)
-	lxcfs.IsLxcfsEnabled, err = strconv.ParseBool(enableLxcfs)
-	if err != nil {
-		return nil, fmt.Errorf("enableLxcfs value not valid")
-	}
-	lxcfs.LxcfsHomeDir = lxcfsPath
-	if lxcfs.IsLxcfsEnabled {
-		if err := lxcfs.CheckLxcfsMount(); err != nil {
-			return nil, err
-		}
-		for _, f := range lxcfs.LxcfsProcFiles {
-			lxcfsMount := pb.Mount{
-				ContainerPath:  path.Join("/proc", f),
-				HostPath:       path.Join(lxcfs.LxcfsHomeDir, f),
-				Readonly:       false,
-				SelinuxRelabel: false,
-				Propagation:    pb.MountPropagation_PROPAGATION_PRIVATE,
-			}
-			containerConfig.Mounts = append(containerConfig.Mounts, &lxcfsMount)
-		}
-
-	}
-
-	kubeAnnotations := containerConfig.GetAnnotations()
-	labels := containerConfig.GetLabels()
-
-	if err := validateLabels(labels); err != nil {
-		return nil, err
-	}
-
-	for k, v := range kubeAnnotations {
-		specgen.AddAnnotation(k, v)
-	}
-
-	for k, v := range labels {
-		specgen.AddAnnotation(k, v)
-	}
+	//enableLxcfs := string("false")
+	//lxcfsPath := string("/var/lib/lxcfs")
+	//
+	//for k, v := range sb.Annotations() {
+	//	logrus.Fatalln(k)
+	//	if k == "enableLxcfs" {
+	//		enableLxcfs = v
+	//		continue
+	//	} else if k == "lxcfsPath" {
+	//		lxcfsPath = v
+	//		continue
+	//	}
+	//}
+	//
+	//specgen.AddAnnotation("enableLxcfs", enableLxcfs)
+	//specgen.AddAnnotation("lxcfsPath", lxcfsPath)
+	//lxcfs.IsLxcfsEnabled, err = strconv.ParseBool(enableLxcfs)
+	//if err != nil {
+	//	return nil, fmt.Errorf("enableLxcfs value not valid")
+	//}
+	//lxcfs.LxcfsHomeDir = lxcfsPath
+	//if lxcfs.IsLxcfsEnabled {
+	//	if err := lxcfs.CheckLxcfsMount(); err != nil {
+	//		return nil, err
+	//	}
+	//	for _, f := range lxcfs.LxcfsProcFiles {
+	//		lxcfsMount := pb.Mount{
+	//			ContainerPath:  path.Join("/proc", f),
+	//			HostPath:       path.Join(lxcfs.LxcfsHomeDir, f),
+	//			Readonly:       false,
+	//			SelinuxRelabel: false,
+	//			Propagation:    pb.MountPropagation_PROPAGATION_PRIVATE,
+	//		}
+	//		containerConfig.Mounts = append(containerConfig.Mounts, &lxcfsMount)
+	//	}
+	//
+	//}
 
 	containerVolumes, ociMounts, err := addOCIBindMounts(mountLabel, containerConfig, &specgen, s.config.RuntimeConfig.BindMountPrefix)
 	if err != nil {
@@ -460,6 +443,21 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 
 	if err := addDevices(sb, containerConfig, &specgen); err != nil {
 		return nil, err
+	}
+
+	labels := containerConfig.GetLabels()
+
+	if err := validateLabels(labels); err != nil {
+		return nil, err
+	}
+
+	kubeAnnotations := containerConfig.GetAnnotations()
+	for k, v := range kubeAnnotations {
+		specgen.AddAnnotation(k, v)
+	}
+
+	for k, v := range labels {
+		specgen.AddAnnotation(k, v)
 	}
 
 	// set this container's apparmor profile if it is set by sandbox
