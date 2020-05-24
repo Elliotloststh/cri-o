@@ -382,19 +382,11 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 	specgen.SetLinuxMountLabel(mountLabel)
 	specgen.SetProcessSelinuxLabel(processLabel)
 
-	labels := containerConfig.GetLabels()
-
-	if err := validateLabels(labels); err != nil {
-		return nil, err
-	}
-
 	//config lxcfs
-	kubeAnnotations := containerConfig.GetAnnotations()
-
 	enableLxcfs := string("false")
 	lxcfsPath := string("/var/lib/lxcfs")
 
-	for k, v := range kubeAnnotations {
+	for k, v := range sb.Annotations() {
 		if k == "enableLxcfs" {
 			enableLxcfs = v
 			continue
@@ -428,6 +420,17 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 			containerConfig.Mounts = append(containerConfig.Mounts, &lxcfsMount)
 		}
 
+	}
+
+	kubeAnnotations := containerConfig.GetAnnotations()
+	labels := containerConfig.GetLabels()
+
+	if err := validateLabels(labels); err != nil {
+		return nil, err
+	}
+
+	for k, v := range kubeAnnotations {
+		specgen.AddAnnotation(k, v)
 	}
 
 	for k, v := range labels {
