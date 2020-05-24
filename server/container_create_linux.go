@@ -391,7 +391,7 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 	//config lxcfs
 	kubeAnnotations := containerConfig.GetAnnotations()
 
-	enableLxcfs := bool("false")
+	enableLxcfs := string("false")
 	lxcfsPath := string("/var/lib/lxcfs")
 
 	for k, v := range kubeAnnotations {
@@ -417,19 +417,17 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 		if err := lxcfs.CheckLxcfsMount(); err != nil {
 			return nil, err
 		}
-		lxcfsMounts := []pb.Mount{}
-		for f := range lxcfs.LxcfsProcFiles {
+		for _, f := range lxcfs.LxcfsProcFiles {
 			lxcfsMount := pb.Mount{
 				ContainerPath:  path.Join("/proc", f),
 				HostPath:       path.Join(lxcfs.LxcfsHomeDir, f),
 				Readonly:       false,
 				SelinuxRelabel: false,
-				Propagation:    nil,
+				Propagation:    pb.MountPropagation_PROPAGATION_PRIVATE,
 			}
-			lxcfsMounts = append(lxcfsMounts, lxcfsMount)
+			containerConfig.Mounts = append(containerConfig.Mounts, lxcfsMount)
 		}
 
-		containerConfig.Mounts = append(containerConfig.Mounts, lxcfsMounts)
 	}
 
 	for k, v := range labels {
