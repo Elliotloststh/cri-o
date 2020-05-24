@@ -5,9 +5,12 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/cri-o/cri-o/lxcfs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -379,6 +382,60 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 	specgen.SetLinuxMountLabel(mountLabel)
 	specgen.SetProcessSelinuxLabel(processLabel)
 
+	labels := containerConfig.GetLabels()
+
+	if err := validateLabels(labels); err != nil {
+		return nil, err
+	}
+
+	//config lxcfs
+	kubeAnnotations := containerConfig.GetAnnotations()
+
+	enableLxcfs := bool("false")
+	lxcfsPath := string("/var/lib/lxcfs")
+
+	for k, v := range kubeAnnotations {
+		if k == "enableLxcfs" {
+			enableLxcfs = v
+			continue
+		} else if k == "lxcfsPath" {
+			lxcfsPath = v
+			continue
+		}
+
+		specgen.AddAnnotation(k, v)
+	}
+
+	specgen.AddAnnotation("enableLxcfs", enableLxcfs)
+	specgen.AddAnnotation("lxcfsPath", lxcfsPath)
+	lxcfs.IsLxcfsEnabled, err = strconv.ParseBool(enableLxcfs)
+	if err != nil {
+		return nil, fmt.Errorf("enableLxcfs value not valid")
+	}
+	lxcfs.LxcfsHomeDir = lxcfsPath
+	if lxcfs.IsLxcfsEnabled {
+		if err := lxcfs.CheckLxcfsMount(); err != nil {
+			return nil, err
+		}
+		lxcfsMounts := []pb.Mount{}
+		for f := range lxcfs.LxcfsProcFiles {
+			lxcfsMount := pb.Mount{
+				ContainerPath:  path.Join("/proc", f),
+				HostPath:       path.Join(lxcfs.LxcfsHomeDir, f),
+				Readonly:       false,
+				SelinuxRelabel: false,
+				Propagation:    nil,
+			}
+			lxcfsMounts = append(lxcfsMounts, lxcfsMount)
+		}
+
+		containerConfig.Mounts = append(containerConfig.Mounts, lxcfsMounts)
+	}
+
+	for k, v := range labels {
+		specgen.AddAnnotation(k, v)
+	}
+
 	containerVolumes, ociMounts, err := addOCIBindMounts(mountLabel, containerConfig, &specgen, s.config.RuntimeConfig.BindMountPrefix)
 	if err != nil {
 		return nil, err
@@ -404,20 +461,6 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 
 	if err := addDevices(sb, containerConfig, &specgen); err != nil {
 		return nil, err
-	}
-
-	labels := containerConfig.GetLabels()
-
-	if err := validateLabels(labels); err != nil {
-		return nil, err
-	}
-
-	kubeAnnotations := containerConfig.GetAnnotations()
-	for k, v := range kubeAnnotations {
-		specgen.AddAnnotation(k, v)
-	}
-	for k, v := range labels {
-		specgen.AddAnnotation(k, v)
 	}
 
 	// set this container's apparmor profile if it is set by sandbox
@@ -575,7 +618,7 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 	podInfraState := sb.InfraContainer().State()
 
 	logrus.Debugf("pod container state %+v", podInfraState)
-	
+
 	// Remove IPC namespace
 	/*ipcNsPath := fmt.Sprintf("/proc/%d/ns/ipc", podInfraState.Pid)
 	if err := specgen.AddOrReplaceLinuxNamespace(string(rspec.IPCNamespace), ipcNsPath); err != nil {
