@@ -394,8 +394,6 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 			lxcfsPath = v
 			continue
 		}
-
-		specgen.AddAnnotation(k, v)
 	}
 
 	specgen.AddAnnotation("enableLxcfs", enableLxcfs)
