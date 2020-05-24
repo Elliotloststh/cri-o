@@ -418,14 +418,14 @@ func (s *Server) createSandboxContainer(ctx context.Context, containerID, contai
 			return nil, err
 		}
 		for _, f := range lxcfs.LxcfsProcFiles {
-			lxcfsMount := *pb.Mount{
+			lxcfsMount := pb.Mount{
 				ContainerPath:  path.Join("/proc", f),
 				HostPath:       path.Join(lxcfs.LxcfsHomeDir, f),
 				Readonly:       false,
 				SelinuxRelabel: false,
 				Propagation:    pb.MountPropagation_PROPAGATION_PRIVATE,
 			}
-			containerConfig.Mounts = append(containerConfig.Mounts, lxcfsMount)
+			containerConfig.Mounts = append(containerConfig.Mounts, &lxcfsMount)
 		}
 
 	}
